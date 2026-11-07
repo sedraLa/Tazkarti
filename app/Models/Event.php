@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EventStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -22,12 +23,14 @@ class Event extends Model
         'start_at',
         'end_at',
         'status',
+        'is_featured',
     ];
 
     protected function casts(): array
     {
         return [
             'status' => EventStatus::class,
+            'is_featured' => 'boolean',
             'start_at' => 'datetime',
             'end_at' => 'datetime',
         ];
@@ -56,5 +59,39 @@ class Event extends Model
     public function images(): MorphMany
     {
         return $this->morphMany(Image::class, 'imageable');
+    }
+
+    public function scopePublished(Builder $query): Builder
+    {
+        return $query->where('status', EventStatus::PUBLISHED);
+    }
+
+    public function scopeUpcoming(Builder $query): Builder
+    {
+        return $query->where('start_at', '>=', now());
+    }
+
+    public function scopeFeatured(Builder $query): Builder
+    {
+        return $query->where('is_featured', true);
+    }
+
+    public function scopeCity(Builder $query, ?string $city): Builder
+    {
+        return $city ? $query->whereHas('venue', fn($q) => $q->where('city', $city)) : $query;
+    }
+
+    public function scopeEventType(Builder $query, ?string $eventType): Builder
+    {
+        return $eventType ? $query->where('event_type', $eventType) : $query;
+    }
+
+    public function scopeDate(Builder $query, ?string $date, ?string $toDate = null): Builder
+    {
+        if ($date && $toDate) {
+            return $query->whereBetween('start_at', [$date, $toDate]);
+        }
+
+        return $date ? $query->whereDate('start_at', $date) : $query;
     }
 }

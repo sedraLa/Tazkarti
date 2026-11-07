@@ -2,23 +2,23 @@
 
 namespace App\Providers;
 
+use App\Models\Event;
+use App\Models\TicketType;
+use App\Policies\EventPolicy;
+use App\Policies\TicketTypePolicy;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
-        //
+        Gate::policy(Event::class, EventPolicy::class);
+        Gate::policy(TicketType::class, TicketTypePolicy::class);
     }
 }

@@ -31,6 +31,7 @@ class EventSeeder extends Seeder
             'start_at' => now()->addDays(20),
             'end_at' => now()->addDays(22),
             'status' => EventStatus::PUBLISHED,
+            'is_featured' => true,
         ]);
 
         $techEvent->images()->create([
@@ -177,6 +178,7 @@ class EventSeeder extends Seeder
             'start_at' => now()->addDays(60),
             'end_at' => now()->addDays(61),
             'status' => EventStatus::PUBLISHED,
+            'is_featured' => true,
         ]);
 
         $megaEvent->images()->create([
