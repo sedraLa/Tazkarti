@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\Booking;
 use App\Models\Event;
 use App\Models\TicketType;
+use App\Policies\BookingPolicy;
 use App\Policies\EventPolicy;
 use App\Policies\TicketTypePolicy;
 use Illuminate\Support\Facades\Gate;
@@ -20,5 +22,6 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Event::class, EventPolicy::class);
         Gate::policy(TicketType::class, TicketTypePolicy::class);
+        Gate::policy(Booking::class, BookingPolicy::class);
     }
 }

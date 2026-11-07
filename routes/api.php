@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Admin\EventController as AdminEventController;
+use App\Http\Controllers\Api\V1\BookingController;
 use App\Http\Controllers\Api\V1\EventController;
 use App\Http\Controllers\Api\V1\Organizer\EventController as OrganizerEventController;
 use App\Http\Controllers\Api\V1\Organizer\TicketTypeController as OrganizerTicketTypeController;
@@ -12,6 +13,14 @@ Route::prefix('v1')->group(function () {
     Route::get('events/upcoming', [EventController::class, 'upcoming']);
     Route::get('events/featured', [EventController::class, 'featured']);
     Route::get('events/{event}', [EventController::class, 'show']);
+
+    // Customer Booking Endpoints (Protected by Sanctum)
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('bookings', [BookingController::class, 'index']);
+        Route::post('bookings', [BookingController::class, 'store']);
+        Route::get('bookings/{booking}', [BookingController::class, 'show']);
+        Route::post('bookings/{booking}/confirm', [BookingController::class, 'confirm']);
+    });
 
     // Admin Endpoints (Protected by Sanctum)
     Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
