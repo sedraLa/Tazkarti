@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CancelBookingRequest;
 use App\Http\Requests\StoreBookingRequest;
 use App\Http\Resources\BookingResource;
 use App\Models\Booking;
@@ -56,5 +57,16 @@ class BookingController extends Controller
         $confirmedBooking = $bookingService->confirmBooking($request->user(), $booking);
 
         return new BookingResource($confirmedBooking);
+    }
+
+    public function cancel(CancelBookingRequest $request, Booking $booking, BookingService $bookingService): BookingResource
+    {
+        $cancelledBooking = $bookingService->cancelBooking(
+            $request->user(),
+            $booking,
+            $request->input('reason')
+        );
+
+        return new BookingResource($cancelledBooking);
     }
 }

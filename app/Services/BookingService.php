@@ -4,11 +4,14 @@ namespace App\Services;
 
 use App\Enums\BookingStatus;
 use App\Enums\EventStatus;
+use App\Enums\RefundStatus;
 use App\Enums\TicketStatus;
+use App\Events\BookingCancelled;
 use App\Events\PurchaseConfirmed;
 use App\Jobs\ExpireBookingReservation;
 use App\Models\Booking;
 use App\Models\Event;
+use App\Models\Refund;
 use App\Models\Ticket;
 use App\Models\TicketType;
 use App\Models\User;
@@ -245,6 +248,105 @@ class BookingService
             ]);
 
             return $booking;
+        });
+    }
+
+    public function cancelBooking(User $user, Booking $booking, ?string $reason = null): Booking
+    {
+        return DB::transaction(function () use ($user, $booking, $reason) {
+            $lockedBooking = Booking::where('id', $booking->id)->lockForUpdate()->first();
+            if (! $lockedBooking) {
+                abort(404, 'الحجز غير موجود.');
+            }
+
+            if (in_array($lockedBooking->status, [BookingStatus::CANCELLED, BookingStatus::REFUNDED, BookingStatus::EXPIRED])) {
+                abort(422, 'لا يمكن إلغاء هذا الحجز نظراً لحالته الحالية.');
+            }
+
+            if ($lockedBooking->status === BookingStatus::HELD && $lockedBooking->expires_at && $lockedBooking->expires_at <= now()) {
+                $this->expireReservation($lockedBooking->id);
+                abort(422, 'انتهت صلاحية هذا الحجز المؤقت ولا يمكن إلغاؤه.');
+            }
+
+            if (! in_array($lockedBooking->status, [BookingStatus::HELD, BookingStatus::PAID])) {
+                abort(422, 'حالة الحجز غير صالحة للإلغاء.');
+            }
+
+            // Lock event and check start time
+            $event = Event::where('id', $lockedBooking->event_id)->lockForUpdate()->first();
+            if (! $event || $event->start_at <= now()) {
+                abort(422, 'لا يمكن إلغاء الحجز بعد بدء الفعالية.');
+            }
+
+            // Check if any ticket is USED
+            $bookingItemIds = $lockedBooking->bookingItems()->pluck('id');
+            $hasUsedTickets = Ticket::whereIn('booking_item_id', $bookingItemIds)
+                ->where('status', TicketStatus::USED)
+                ->exists();
+
+            if ($hasUsedTickets) {
+                abort(422, 'لا يمكن إلغاء أو استرجاع حجز يحتوي على تذاكر مستخدمة.');
+            }
+
+            // Lock ticket types in ascending ID order to prevent deadlocks
+            $ticketTypeIds = $lockedBooking->bookingItems->pluck('ticket_type_id')->unique()->sort()->values()->all();
+            $ticketTypes = TicketType::whereIn('id', $ticketTypeIds)->lockForUpdate()->get()->keyBy('id');
+
+            if ($lockedBooking->status === BookingStatus::HELD) {
+                foreach ($lockedBooking->bookingItems as $item) {
+                    $tt = $ticketTypes->get($item->ticket_type_id);
+                    if ($tt) {
+                        $decrementAmount = min($item->quantity, $tt->reserved_quantity);
+                        if ($decrementAmount > 0) {
+                            $tt->decrement('reserved_quantity', $decrementAmount);
+                            $tt->refresh();
+                        }
+                    }
+                }
+
+                $lockedBooking->update([
+                    'status' => BookingStatus::CANCELLED,
+                    'expires_at' => null,
+                ]);
+            } elseif ($lockedBooking->status === BookingStatus::PAID) {
+                foreach ($lockedBooking->bookingItems as $item) {
+                    $tt = $ticketTypes->get($item->ticket_type_id);
+                    if ($tt) {
+                        $decrementAmount = min($item->quantity, $tt->sold_quantity);
+                        if ($decrementAmount > 0) {
+                            $tt->decrement('sold_quantity', $decrementAmount);
+                            $tt->refresh();
+                        }
+                    }
+                }
+
+                Ticket::whereIn('booking_item_id', $bookingItemIds)
+                    ->where('status', TicketStatus::VALID)
+                    ->update([
+                        'status' => TicketStatus::CANCELLED,
+                    ]);
+
+                $existingRefund = Refund::where('booking_id', $lockedBooking->id)->first();
+                if (! $existingRefund) {
+                    Refund::create([
+                        'booking_id' => $lockedBooking->id,
+                        'amount' => $lockedBooking->total_amount,
+                        'status' => RefundStatus::COMPLETED,
+                        'reason' => $reason ?? 'Booking cancelled',
+                        'refunded_at' => now(),
+                    ]);
+                }
+
+                $lockedBooking->update([
+                    'status' => BookingStatus::REFUNDED,
+                ]);
+            }
+
+            DB::afterCommit(function () use ($lockedBooking) {
+                BookingCancelled::dispatch($lockedBooking->id);
+            });
+
+            return $lockedBooking->load(['bookingItems.ticketType', 'bookingItems.tickets', 'tickets', 'event.venue', 'refunds']);
         });
     }
 
