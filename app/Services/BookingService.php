@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\BookingStatus;
 use App\Enums\EventStatus;
 use App\Enums\TicketStatus;
+use App\Events\PurchaseConfirmed;
 use App\Jobs\ExpireBookingReservation;
 use App\Models\Booking;
 use App\Models\Event;
@@ -192,6 +193,10 @@ class BookingService
                 'status' => BookingStatus::PAID,
                 'expires_at' => null,
             ]);
+
+            DB::afterCommit(function () use ($lockedBooking) {
+                PurchaseConfirmed::dispatch($lockedBooking->id);
+            });
 
             return $lockedBooking;
         });

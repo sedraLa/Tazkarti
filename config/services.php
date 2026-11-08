@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'email' => [
+        'provider' => env('EMAIL_PROVIDER', 'log'),
+        'simulate_failure' => (bool) env('EMAIL_SIMULATE_FAILURE', false),
+    ],
+
 ];
