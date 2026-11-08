@@ -40,4 +40,9 @@ return [
         'simulate_failure' => (bool) env('EMAIL_SIMULATE_FAILURE', false),
     ],
 
+    'sms' => [
+        'provider' => env('SMS_PROVIDER', 'log'),
+        'simulate_failure' => (bool) env('SMS_SIMULATE_FAILURE', false),
+    ],
+
 ];

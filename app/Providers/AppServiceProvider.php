@@ -10,6 +10,8 @@ use App\Policies\EventPolicy;
 use App\Policies\TicketTypePolicy;
 use App\Services\Email\EmailProviderInterface;
 use App\Services\Email\LogEmailProvider;
+use App\Services\Sms\LogSmsProvider;
+use App\Services\Sms\SmsProviderInterface;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -23,6 +25,15 @@ class AppServiceProvider extends ServiceProvider
             return match ($provider) {
                 'log', 'fake' => new LogEmailProvider(),
                 default => new LogEmailProvider(),
+            };
+        });
+
+        $this->app->bind(SmsProviderInterface::class, function () {
+            $provider = config('services.sms.provider', 'log');
+
+            return match ($provider) {
+                'log', 'fake' => new LogSmsProvider(),
+                default => new LogSmsProvider(),
             };
         });
     }
