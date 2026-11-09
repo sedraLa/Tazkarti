@@ -7,6 +7,7 @@ use App\Enums\EventStatus;
 use App\Enums\RefundStatus;
 use App\Enums\TicketStatus;
 use App\Events\BookingCancelled;
+use App\Events\EventCancelled;
 use App\Events\PurchaseConfirmed;
 use App\Jobs\ExpireBookingReservation;
 use App\Models\Booking;
@@ -121,8 +122,11 @@ class BookingService
                     $booking->bookingItems()->create($itemData);
                 }
 
-                // Dispatch delayed expiration job after commit
-                DB::afterCommit(function () use ($booking) {
+                // Dispatch delayed expiration job and invalidate cache after commit
+                DB::afterCommit(function () use ($booking, $ticketTypeIds) {
+                    foreach ($ticketTypeIds as $id) {
+                        TicketType::invalidateAvailableQuantityCache($id);
+                    }
                     ExpireBookingReservation::dispatch($booking->id)->delay(now()->addMinutes(10));
                 });
 
@@ -197,7 +201,10 @@ class BookingService
                 'expires_at' => null,
             ]);
 
-            DB::afterCommit(function () use ($lockedBooking) {
+            DB::afterCommit(function () use ($lockedBooking, $ticketTypeIds) {
+                foreach ($ticketTypeIds as $id) {
+                    TicketType::invalidateAvailableQuantityCache($id);
+                }
                 PurchaseConfirmed::dispatch($lockedBooking->id);
             });
 
@@ -247,11 +254,17 @@ class BookingService
                 'status' => BookingStatus::EXPIRED,
             ]);
 
+            DB::afterCommit(function () use ($ticketTypeIds) {
+                foreach ($ticketTypeIds as $id) {
+                    TicketType::invalidateAvailableQuantityCache($id);
+                }
+            });
+
             return $booking;
         });
     }
 
-    public function cancelBooking(User $user, Booking $booking, ?string $reason = null): Booking
+    public function cancelBooking(?User $user, Booking $booking, ?string $reason = null): Booking
     {
         return DB::transaction(function () use ($user, $booking, $reason) {
             $lockedBooking = Booking::where('id', $booking->id)->lockForUpdate()->first();
@@ -274,17 +287,17 @@ class BookingService
 
             // Lock event and check start time
             $event = Event::where('id', $lockedBooking->event_id)->lockForUpdate()->first();
-            if (! $event || $event->start_at <= now()) {
+            if (! $event || ($event->status !== EventStatus::CANCELLED && $event->start_at <= now())) {
                 abort(422, 'لا يمكن إلغاء الحجز بعد بدء الفعالية.');
             }
 
-            // Check if any ticket is USED
+            // Check if any ticket is USED (unless whole event was cancelled)
             $bookingItemIds = $lockedBooking->bookingItems()->pluck('id');
             $hasUsedTickets = Ticket::whereIn('booking_item_id', $bookingItemIds)
                 ->where('status', TicketStatus::USED)
                 ->exists();
 
-            if ($hasUsedTickets) {
+            if ($event->status !== EventStatus::CANCELLED && $hasUsedTickets) {
                 abort(422, 'لا يمكن إلغاء أو استرجاع حجز يحتوي على تذاكر مستخدمة.');
             }
 
@@ -342,11 +355,43 @@ class BookingService
                 ]);
             }
 
-            DB::afterCommit(function () use ($lockedBooking) {
+            DB::afterCommit(function () use ($lockedBooking, $ticketTypeIds) {
+                foreach ($ticketTypeIds as $id) {
+                    TicketType::invalidateAvailableQuantityCache($id);
+                }
                 BookingCancelled::dispatch($lockedBooking->id);
             });
 
             return $lockedBooking->load(['bookingItems.ticketType', 'bookingItems.tickets', 'tickets', 'event.venue', 'refunds']);
+        });
+    }
+
+    public function cancelEvent(Event $event, ?string $reason = null): Event
+    {
+        return DB::transaction(function () use ($event, $reason) {
+            $lockedEvent = Event::where('id', $event->id)->lockForUpdate()->first();
+            if (! $lockedEvent) {
+                abort(404, 'الفعالية غير موجودة.');
+            }
+
+            if ($lockedEvent->status === EventStatus::CANCELLED) {
+                abort(422, 'الفعالية ملغاة بالفعل.');
+            }
+
+            if ($lockedEvent->status !== EventStatus::PUBLISHED) {
+                abort(422, 'لا يمكن إلغاء فعالية غير منشورة.');
+            }
+
+            $lockedEvent->update([
+                'status' => EventStatus::CANCELLED,
+            ]);
+
+            DB::afterCommit(function () use ($lockedEvent) {
+                Event::invalidateUpcomingCache();
+                EventCancelled::dispatch($lockedEvent->id);
+            });
+
+            return $lockedEvent;
         });
     }
 

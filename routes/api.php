@@ -36,6 +36,9 @@ Route::prefix('v1')->group(function () {
         Route::get('events/{event}', [OrganizerEventController::class, 'show']);
         Route::put('events/{event}', [OrganizerEventController::class, 'update']);
         Route::delete('events/{event}', [OrganizerEventController::class, 'destroy']);
+        Route::post('events/{event}/cancel', [OrganizerEventController::class, 'cancel']);
+        Route::post('events/{event}/announcements', [OrganizerEventController::class, 'sendAnnouncement']);
+        Route::post('events/{event}/announce', [OrganizerEventController::class, 'sendAnnouncement']);
 
         // Ticket Types (Nested under Event)
         Route::get('events/{event}/ticket-types', [OrganizerTicketTypeController::class, 'index']);

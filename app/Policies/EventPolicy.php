@@ -62,4 +62,26 @@ class EventPolicy
     {
         return $user->role === UserRole::ADMIN;
     }
+
+    public function cancel(User $user, Event $event): bool
+    {
+        if ($user->role === UserRole::ADMIN) {
+            return true;
+        }
+
+        return $user->role === UserRole::ORGANIZER
+            && $user->organizer !== null
+            && $user->organizer->id === $event->organizer_id;
+    }
+
+    public function sendAnnouncement(User $user, Event $event): bool
+    {
+        if ($user->role === UserRole::ADMIN) {
+            return true;
+        }
+
+        return $user->role === UserRole::ORGANIZER
+            && $user->organizer !== null
+            && $user->organizer->id === $event->organizer_id;
+    }
 }

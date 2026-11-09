@@ -26,13 +26,12 @@ class EventController extends Controller
 
     public function upcoming(Request $request): AnonymousResourceCollection
     {
-        $events = Event::published()
-            ->upcoming()
-            ->city($request->query('city'))
-            ->eventType($request->query('event_type'))
-            ->with(['venue', 'organizer', 'images'])
-            ->orderBy('start_at')
-            ->paginate($request->integer('per_page', 15));
+        $events = Event::getUpcomingCached(
+            city: $request->query('city'),
+            eventType: $request->query('event_type'),
+            perPage: $request->integer('per_page', 15),
+            page: $request->integer('page', 1)
+        );
 
         return EventResource::collection($events);
     }

@@ -5,13 +5,18 @@ namespace App\Http\Controllers\Api\V1\Organizer;
 use App\Enums\EventStatus;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\SendEventAnnouncementRequest;
 use App\Http\Requests\StoreEventRequest;
 use App\Http\Requests\UpdateEventRequest;
+use App\Http\Resources\EventAnnouncementResource;
 use App\Http\Resources\EventResource;
+use App\Jobs\ProcessEventAnnouncementJob;
 use App\Models\Event;
+use App\Services\BookingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 class EventController extends Controller
 {
@@ -86,5 +91,38 @@ class EventController extends Controller
         return response()->json([
             'message' => 'تم حذف الفعالية بنجاح.',
         ], 200);
+    }
+
+    public function cancel(Request $request, Event $event, BookingService $bookingService): JsonResponse
+    {
+        $this->authorize('cancel', $event);
+
+        $cancelledEvent = $bookingService->cancelEvent($event, $request->input('reason'));
+
+        return response()->json([
+            'message' => 'تم إلغاء الفعالية وبدء معالجة استرجاع الحجوزات.',
+            'data' => new EventResource($cancelledEvent->load(['organizer', 'venue', 'images', 'ticketTypes'])),
+        ], 200);
+    }
+
+    public function sendAnnouncement(SendEventAnnouncementRequest $request, Event $event): JsonResponse
+    {
+        if ($event->status !== EventStatus::PUBLISHED) {
+            abort(422, 'لا يمكن إرسال إعلان لفعالية غير منشورة.');
+        }
+
+        $announcement = DB::transaction(function () use ($request, $event) {
+            $announcement = $event->announcements()->create($request->validated());
+
+            DB::afterCommit(function () use ($announcement) {
+                ProcessEventAnnouncementJob::dispatch($announcement->id);
+            });
+
+            return $announcement;
+        });
+
+        return (new EventAnnouncementResource($announcement))
+            ->response()
+            ->setStatusCode(201);
     }
 }
